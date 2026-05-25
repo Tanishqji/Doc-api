@@ -1,0 +1,384 @@
+# Schooly WebApp – Complete Database Schema Documentation
+
+## Document Information
+
+| Field         | Details                       |
+| ------------- | ----------------------------- |
+| Project       | Schooly WebApp                |
+| Document Type | Database Schema Documentation |
+| Prepared For  | Team Lead Review              |
+| Prepared By   | Tanishq Sejwar                |
+| Architecture  | Relational Database Design    |
+| Database Type | SQL-Based Relational Database |
+
+---
+
+# Overview
+
+This document defines the production-level database schema for the Schooly WebApp backend. The design reflects the current project implementation as defined in JPA entities and Flyway migrations.
+
+The schema supports:
+
+* Normalized relational architecture
+* Scalable multi-school model
+* Role-based access control
+* Student lifecycle management
+* Attendance tracking
+* Financial operations for invoices and payments
+* Parent and staff relationships
+* Dashboard and analytics support
+
+---
+
+# Core Modules Covered
+
+* Authentication & Authorization
+* School Management
+* Student Management
+* Staff Management
+* Parent Management
+* Class & Section Management
+* Attendance Management
+* Fee & Invoice Management
+* Payment Tracking
+* Dashboard Analytics Support
+
+---
+
+# Database Architecture
+
+```text
+schools
+ ├── users
+ │    ├── user_school_roles
+ │    ├── auth_sessions
+ │    └── student_parents
+ ├── class
+ │    └── student
+ │         ├── student_attendance
+ │         ├── fee_invoice
+ │         │    └── payment
+ │         └── student_parents
+ ├── staff
+ └── fee_invoice
+```
+
+---
+
+# Migration files
+
+- `src/main/resources/db/migration/V1__init.sql`
+- `src/main/resources/db/migration/V2__multi_tenant_auth.sql`
+- `src/main/resources/db/migration/V3__sample_data.sql`
+
+---
+
+# 1. schools Table
+
+Stores each school/tenant record.
+
+| Column        | Type         | Constraints                       |
+| ------------- | ------------ | ---------------------------------- |
+| id            | BIGINT       | PRIMARY KEY                        |
+| name          | VARCHAR(255) | NOT NULL                           |
+| code          | VARCHAR(255) | NOT NULL UNIQUE                    |
+| contact_email | VARCHAR(255) | NULL                               |
+| contact_phone | VARCHAR(255) | NULL                               |
+| address       | VARCHAR(255) | NULL                               |
+| status        | VARCHAR(255) | NULL                               |
+| created_at    | TIMESTAMP    | DEFAULT CURRENT_TIMESTAMP          |
+
+---
+
+# 2. users Table
+
+Stores authentication and user profile data.
+
+| Column        | Type         | Constraints                        |
+| ------------- | ------------ | ---------------------------------- |
+| id            | BIGINT       | PRIMARY KEY                        |
+| phone         | VARCHAR(20)  | NOT NULL UNIQUE                    |
+| name          | VARCHAR(255) | NULL                               |
+| email         | VARCHAR(255) | NULL                               |
+| password_hash | VARCHAR(255) | NULL                               |
+| status        | VARCHAR(50)  | NOT NULL DEFAULT 'ACTIVE'          |
+| created_at    | TIMESTAMP    | NOT NULL DEFAULT CURRENT_TIMESTAMP |
+
+## Relationships
+
+* Users can belong to many schools through `user_school_roles`.
+* Users can be parents, staff, students, or administrators.
+
+---
+
+# 3. user_school_roles Table
+
+Stores user roles scoped to a school.
+
+| Column    | Type        | Constraints                               |
+| --------- | ----------- | ------------------------------------------ |
+| id        | BIGINT      | PRIMARY KEY                                |
+| user_id   | BIGINT      | NOT NULL, FOREIGN KEY → `users(id)`        |
+| school_id | BIGINT      | NOT NULL, FOREIGN KEY → `schools(id)`      |
+| role      | user_role   | NOT NULL                                   |
+| status    | VARCHAR(50) | NOT NULL DEFAULT 'ACTIVE'                  |
+| joined_at | TIMESTAMP   | NOT NULL DEFAULT CURRENT_TIMESTAMP         |
+| left_at   | TIMESTAMP   | NULL                                       |
+
+### Constraints & Indexes
+
+* Unique constraint: `(user_id, school_id, role)`
+* Indexes:
+  * `idx_user_school_roles_user_id` on `user_id`
+  * `idx_user_school_roles_school_id` on `school_id`
+  * `idx_user_school_roles_school_role` on `(school_id, role)`
+
+---
+
+# 4. class Table
+
+Stores class groups for each school.
+
+| Column    | Type         | Constraints                        |
+| --------- | ------------ | ---------------------------------- |
+| id        | BIGINT       | PRIMARY KEY                        |
+| name      | VARCHAR(255) | NOT NULL                           |
+| school_id | BIGINT       | NOT NULL, FOREIGN KEY → `schools(id)` |
+
+### Indexes
+
+* `idx_class_school_id` on `school_id`
+
+---
+
+# 5. student Table
+
+Stores student records.
+
+| Column           | Type         | Constraints                             |
+| ---------------- | ------------ | ---------------------------------------- |
+| id               | BIGINT       | PRIMARY KEY                              |
+| user_id          | BIGINT       | NULL                                      |
+| name             | VARCHAR(255) | NULL                                      |
+| admission_no     | VARCHAR(255) | NOT NULL                                 |
+| roll_number      | VARCHAR(255) | NULL                                      |
+| class_id         | BIGINT       | NOT NULL, FOREIGN KEY → `class(id)`       |
+| section_id       | BIGINT       | NULL                                      |
+| academic_year_id | BIGINT       | NULL                                      |
+| school_id        | BIGINT       | NOT NULL, FOREIGN KEY → `schools(id)`     |
+| status           | VARCHAR(255) | NOT NULL                                 |
+| admission_date   | DATE         | NULL                                      |
+
+### Indexes
+
+* `idx_student_class_id` on `class_id`
+* `idx_student_school_id` on `school_id`
+
+---
+
+# 6. student_parents Table
+
+Stores student-parent associations.
+
+| Column         | Type        | Constraints                                 |
+| -------------- | ----------- | -------------------------------------------- |
+| student_id     | BIGINT      | NOT NULL, FOREIGN KEY → `student(id)`        |
+| parent_user_id | BIGINT      | NOT NULL, FOREIGN KEY → `users(id)`          |
+| relation       | VARCHAR(100)| NULL                                         |
+| is_primary     | BOOLEAN     | NOT NULL DEFAULT FALSE                       |
+
+### Keys
+
+* Primary key: composite `(student_id, parent_user_id)`
+
+### Indexes
+
+* `idx_student_parents_parent_user_id` on `parent_user_id`
+
+---
+
+# 7. fee_invoice Table
+
+Stores student fee invoices.
+
+| Column          | Type          | Constraints                                 |
+| --------------- | ------------- | -------------------------------------------- |
+| id              | BIGINT        | PRIMARY KEY                                  |
+| student_id      | BIGINT        | NOT NULL, FOREIGN KEY → `student(id)`        |
+| school_id       | BIGINT        | NOT NULL, FOREIGN KEY → `schools(id)`        |
+| academic_year_id| BIGINT        | NULL                                         |
+| due_date        | DATE          | NOT NULL                                     |
+| total_amount    | NUMERIC(19, 2)| NOT NULL                                     |
+| paid_amount     | NUMERIC(19, 2)| NULL                                         |
+| status          | VARCHAR(255) | NOT NULL                                     |
+| created_at      | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP                    |
+
+### Indexes
+
+* `idx_fee_invoice_student_id` on `student_id`
+* `idx_fee_invoice_school_id` on `school_id`
+
+---
+
+# 8. payment Table
+
+Stores payment records for invoices.
+
+| Column         | Type          | Constraints                                 |
+| -------------- | ------------- | -------------------------------------------- |
+| id             | BIGINT        | PRIMARY KEY                                  |
+| invoice_id     | BIGINT        | NOT NULL, FOREIGN KEY → `fee_invoice(id)`    |
+| school_id      | BIGINT        | NOT NULL, FOREIGN KEY → `schools(id)`        |
+| amount         | NUMERIC(19, 2)| NOT NULL                                     |
+| payment_mode   | VARCHAR(255)  | NOT NULL                                     |
+| transaction_id | VARCHAR(255)  | NULL                                         |
+| status         | VARCHAR(255)  | NULL                                         |
+| created_at     | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP                    |
+
+### Indexes
+
+* `idx_payment_invoice_id` on `invoice_id`
+* `idx_payment_school_id` on `school_id`
+
+---
+
+# 9. student_attendance Table
+
+Stores attendance entries for students.
+
+| Column          | Type         | Constraints                                 |
+| --------------- | ------------ | -------------------------------------------- |
+| id              | BIGINT       | PRIMARY KEY                                  |
+| student_id      | BIGINT       | NOT NULL, FOREIGN KEY → `student(id)`        |
+| school_id       | BIGINT       | NOT NULL, FOREIGN KEY → `schools(id)`        |
+| attendance_date | DATE         | NOT NULL                                     |
+| status          | VARCHAR(255) | NOT NULL                                     |
+
+### Indexes
+
+* `idx_attendance_student_id` on `student_id`
+* `idx_attendance_school_id` on `school_id`
+* `idx_attendance_date` on `attendance_date`
+
+---
+
+# 10. staff Table
+
+Stores staff and employee records.
+
+| Column         | Type          | Constraints                                 |
+| -------------- | ------------- | -------------------------------------------- |
+| id             | BIGINT        | PRIMARY KEY                                  |
+| user_id        | BIGINT        | NULL                                         |
+| school_id      | BIGINT        | NOT NULL, FOREIGN KEY → `schools(id)`        |
+| department_id  | BIGINT        | NULL                                         |
+| designation_id | BIGINT        | NULL                                         |
+| joining_date   | DATE          | NULL                                         |
+| salary         | NUMERIC(19, 2)| NULL                                         |
+| status         | VARCHAR(255) | NULL                                         |
+
+### Indexes
+
+* `idx_staff_school_id` on `school_id`
+
+---
+
+# 11. auth_sessions Table
+
+Stores authentication session state.
+
+| Column         | Type       | Constraints                                 |
+| -------------- | ---------- | -------------------------------------------- |
+| id             | BIGINT     | PRIMARY KEY                                  |
+| user_id        | BIGINT     | NOT NULL, FOREIGN KEY → `users(id)`          |
+| school_id      | BIGINT     | NULL, FOREIGN KEY → `schools(id)`            |
+| access_token   | TEXT       | NOT NULL                                     |
+| refresh_token  | TEXT       | NOT NULL                                     |
+| device_info    | JSONB      | NULL                                         |
+| created_at     | TIMESTAMP  | NOT NULL DEFAULT CURRENT_TIMESTAMP           |
+
+---
+
+# ENUM types
+
+* `user_role` values:
+  * `SUPER_ADMIN`
+  * `ADMIN`
+  * `TEACHER`
+  * `STUDENT`
+  * `PARENT`
+
+---
+
+# Entity Relationship Summary
+
+| Table            | Related Tables                             |
+| ---------------- | ------------------------------------------ |
+| schools          | users, class, student, staff, fee_invoice  |
+| users            | user_school_roles, auth_sessions, student_parents, staff |
+| class            | student                                    |
+| student          | student_attendance, fee_invoice, student_parents |
+| fee_invoice      | payment                                    |
+| student_parents  | users, student                             |
+
+---
+
+# Recommended Indexes
+
+| Table             | Indexed Column  |
+| ----------------- | --------------- |
+| users             | phone           |
+| class             | school_id       |
+| student           | class_id        |
+| student           | school_id       |
+| fee_invoice       | student_id      |
+| payment           | invoice_id      |
+| student_attendance| attendance_date |
+
+---
+
+# Security Recommendations
+
+## Database Security
+
+* Store passwords securely using bcrypt or Argon2.
+* Use JWT for API authentication.
+* Apply role-based access control using `user_school_roles`.
+* Restrict direct database access to trusted application services.
+* Enable backup and point-in-time recovery for production databases.
+
+---
+
+# Scalability Considerations
+
+## Production Scaling Support
+
+* Multi-school support via `school_id` scoping.
+* Normalized schema for reusable entity relationships.
+* Indexes on foreign keys and lookup columns.
+* Clear separation of auth, student, finance, attendance, and parent data.
+* Ready for caching and analytics extension.
+
+---
+
+# Suggested Future Tables
+
+| Table             | Purpose                           |
+| ----------------- | --------------------------------- |
+| exams             | Exam schedules and assessments    |
+| results           | Student grades and results        |
+| subjects          | Subject and curriculum mapping    |
+| timetable         | Class schedules and periods       |
+| notifications     | Alerts and messages               |
+| audit_logs        | Auditing and activity tracking    |
+| roles_permissions | Advanced RBAC                     |
+| transport         | Vehicle and route management      |
+| hostel            | Boarding and accommodation data   |
+
+---
+
+# Conclusion
+
+The Schooly WebApp database schema is designed to support the current backend architecture while providing a strong foundation for future expansion. The schema aligns with the projects REST APIs, entity models, and multi-school requirements.
+
+This document can be used as the baseline database design for implementation, review, and production deployment.
